@@ -1,98 +1,57 @@
+// index.js
 import express from "express";
 import multer from "multer";
+import path from "path";
 import fs from "fs";
-import PizZip from "pizzip";
-import Docxtemplater from "docxtemplater";
 
+// Создаём папку для загрузок, если не существует
+const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+// Настройка хранения файлов
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_DIR);
+  },
+  filename: (req, file, cb) => {
+    // Сохраняем с оригинальным именем + дату
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + "-" + uniqueSuffix + ext);
+  },
+});
+
+// Настройка multer
+const upload = multer({ storage });
+
+// Создаём Express приложение
 const app = express();
 
-// папка для временных файлов
-const upload = multer({ dest: "uploads/" });
-
-// 👉 опционально: простой API-ключ (можно пока закомментировать)
-/*
-const API_KEY = "secret123";
-
-app.use((req, res, next) => {
-  if (req.headers["x-api-key"] !== API_KEY) {
-    return res.status(403).send("Forbidden");
-  }
-  next();
-});
-*/
-
-// основной endpoint
-app.post("/generate", upload.single("file"), (req, res) => {
-  let filePath;
-
-  try {
-    // проверка файла
-    if (!req.file) {
-      return res.status(400).send("Файл не передан");
-    }
-
-    filePath = req.file.path;
-
-    // проверка данных
-    if (!req.body.data) {
-      return res.status(400).send("Нет данных для шаблона");
-    }
-
-    let data;
-    try {
-      data = JSON.parse(req.body.data);
-    } catch (e) {
-      return res.status(400).send("Неверный JSON в data");
-    }
-
-    // читаем docx
-    const content = fs.readFileSync(filePath, "binary");
-
-    const zip = new PizZip(content);
-
-    const doc = new Docxtemplater(zip, {
-      paragraphLoop: true,
-      linebreaks: true,
-    });
-
-    // подставляем значения
-    doc.setData(data);
-
-    // рендер
-    doc.render();
-
-    // получаем результат
-    const buffer = doc.getZip().generate({
-      type: "nodebuffer",
-    });
-
-    // отправляем файл
-    res.set({
-      "Content-Type":
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": "attachment; filename=result.docx",
-    });
-
-    res.send(buffer);
-  } catch (error) {
-    console.error("Ошибка:", error);
-    res.status(500).send("Ошибка генерации документа");
-  } finally {
-    // удаляем временный файл
-    if (filePath && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-  }
-});
-
-// health check (очень полезно для Elestio)
+// Маршрут проверки сервера
 app.get("/", (req, res) => {
-  res.send("docx-service is running");
+  res.send("Server is running!");
 });
 
-// порт для Elestio
-const PORT = process.env.PORT || 3000;
+// Маршрут для загрузки одного файла
+app.post("/upload", upload.single("file"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+  res.json({ message: "File uploaded successfully", file: req.file });
+});
 
+// Маршрут для загрузки нескольких файлов
+app.post("/uploads", upload.array("files", 10), (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: "No files uploaded" });
+  }
+  res.json({ message: "Files uploaded successfully", files: req.files });
+});
+
+// Запуск сервера
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

@@ -1,4 +1,10 @@
-FROM directus/directus:latest
-USER root
-RUN npm install axios pizzip docxtemplater
-USER node
+FROM node:18
+
+WORKDIR /app
+
+COPY package.json .
+RUN npm install
+
+COPY . .
+
+CMD ["node", "index.js"]
